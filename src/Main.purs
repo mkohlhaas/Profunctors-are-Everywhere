@@ -4,10 +4,13 @@ import Prelude
 
 import Data.Either (Either(..), either)
 import Data.Generic.Rep (class Generic)
+import Data.Identity (Identity(..))
 import Data.Maybe (fromMaybe)
+import Data.Newtype (unwrap)
 import Data.Number (fromString, isNaN)
 import Data.Show.Generic (genericShow)
 import Data.String.CodeUnits (fromCharArray, toCharArray)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
@@ -95,11 +98,11 @@ bossMadeMe2 = dimap fromUTF8 identity modified
 -- In this case, and if there is no funny business (ie deleting entries), the two can be used interchangeably.
 
 -- Iso is just a different view on profunctors.
-iso ∷ ∀ p s t a b. Profunctor p => (s → a) → (b → t) → p a b → p s t
+iso ∷ ∀ p s t a b. Profunctor p ⇒ (s → a) → (b → t) → p a b → p s t
 iso = dimap
 
 -- Using a type alias:
-type Iso s t a b = ∀ p. Profunctor p => p a b → p s t
+type Iso s t a b = ∀ p. Profunctor p ⇒ p a b → p s t
 
 iso' ∷ ∀ s t a b. (s → a) → (b → t) → Iso s t a b
 iso' s2a b2t = dimap s2a b2t -- Meaning that if you give me (s → a) → (b → t), I'll give you back an Iso.
@@ -158,10 +161,10 @@ mapBackHome ∷ ∀ a. Show a ⇒ String → Tuple Number (a → String)
 mapBackHome s = Tuple (readFloat s) show -- `show` is our "map back" from `readFloat`
 
 -- We are packing the covariant function (b → t) into the contravariant function and hiding it in a Tuple.
--- lens ∷ ∀ p s t a b. Strong p => (s → Tuple a (b → t)) → p a b → p s t
+-- lens ∷ ∀ p s t a b. Strong p ⇒ (s → Tuple a (b → t)) → p a b → p s t
 -- Applied to Profunctor Function:
 -- lens creates a function which takes an `s` and creates a `t`:       (s → t)
--- lens ∷ ∀ p s t a b. Strong p => (s → Tuple a (b → t)) → (a → b) → (s → t)
+-- lens ∷ ∀ p s t a b. Strong p ⇒ (s → Tuple a (b → t)) → (a → b) → (s → t)
 -- lens generates a function taking an `s` and producing a `t` (s → t)
 -- lens ∷ ∀ s t a b. (s → Tuple a (b → t)) → (a → b) → (s → t)
 lens ∷ ∀ s t a b. (s → Tuple a (b → t)) → Lens s t a b
@@ -177,8 +180,8 @@ lens inputWithMap server =
 -- lens  ∷ ∀ p a b s t. Strong p ⇒ (s → Tuple a    (b → t)) → (a → b) → (s → t)
 
 -- Lens is a strong profunctor. (Strong means that it uses a Tuple.)
-type Lens s t a b = ∀ p. Strong p => p a b → p s t -- (a → b) → (s → t)
-type Lens' s a = Lens s s a a ----------------------- (a → a) → (s → s)
+type Lens s t a b = ∀ p. Strong p ⇒ p a b → p s t -- (a → b) → (s → t)
+type Lens' s a = Lens s s a a ---------------------- (a → a) → (s → s)
 
 -- In general, when you "zoom out" from a lens, you want to get back to where you started, so Lens' is enough for most practical cases.
 
@@ -296,16 +299,40 @@ lockedOneServer =
     (\locked → locked "not-so-secret-password") -- (Password → Number (= 4.1416)) → Number (= 4.1416)
     (lock oneServer) ----------------------------- (Password → Number (= 3.1416)) → (Password → Number (= 4.1416))
 
--- In functional-programming land, passwords can be anything. Strings, Ints, ... and FUNCTIONS!
+-- Start with (lock oneServer) and see what it needs for input and what output it creates.
+-- Output goes to second function of dimap (\locked → …).
 
+-- In functional-programming land, passwords can be anything. Strings, Ints, ... and FUNCTIONS!
 -- Password-protection with a function is called a GRATE.
 -- Here, (s → a) will be our "function" password.
 -- Replace x with (s → a) in closed:
 -- closed ∷ ∀ a b x s. (a → b) → ((s → a) → a) → ((s → a) → b)
--- grate ∷ ∀ s t a b p. Closed p ⇒ (((s → a) → b) → t) → (a → b) → (s → t)
 -- grate ∷ ∀ s t a b p. Closed p ⇒ (((s → a) → b) → t) → p a b → p s t
--- grate unlock server = dimap (\s → \(f ∷ (s → a)) → (f s ∷ a)) (unlock ∷ (((s → a) → b) → t)) (lock server ∷ ((s → a) → b))
-grate unlock server = dimap (\s → \f → f s) unlock (lock server)
+-- grate ∷ ∀ s t a b p. Closed p ⇒ (((s → a) → b) → t) → (a → b) → (s → t)
+grate unlock server =
+  dimap
+    (\s → \f → f s) ---    s → ((s → a) → a)
+    unlock ------------   ((s → a) → b) → t
+    (lock server) -----  ((s → a) → a) → ((s → a) → b)
+
+-- checking types
+grate' ∷ ∀ s t a b. (((s → a) → b) → t) → (a -> b) → (s -> t)
+grate' unlock server =
+  dimap
+    ((\s → \f → f s) ∷ s → ((s → a) → a))
+    (unlock ∷ ((s → a) → b) → t)
+    (lock server ∷ ((s → a) → a) → ((s → a) → b))
+
+-- rgb = s = RGB
+-- t       = RGB
+-- a       = Number
+-- b       = Number
+grate'' ∷ ∀ rgb t a b. (((rgb → a) → b) → t) → (a -> b) → (rgb -> t)
+grate'' unlock server =
+  dimap
+    ((\rgb → \f → f rgb) ∷ rgb → ((rgb → a) → a)) ------ rgb is hidden inside the function password
+    (unlock ∷ ((rgb → a) → b) → t)
+    (lock server ∷ ((rgb → a) → a) → ((rgb → a) → b))
 
 data RGB = RGB Number Number Number
 
@@ -313,7 +340,7 @@ derive instance Generic RGB _
 instance Show RGB where
   show = genericShow
 
--- passwords red, green, blue
+-- secret algorithms/password functions: red, green, blue
 red ∷ RGB → Number
 red (RGB r _ _) = r
 
@@ -323,13 +350,69 @@ green (RGB _ g _) = g
 blue ∷ RGB → Number
 blue (RGB _ _ b) = b
 
-mySecretFilterApplication ∷ ((RGB → Number) → Number) → RGB -- (((s → a) → b) → t) in grate
+mySecretFilterApplication ∷ ((RGB → Number) → Number) → RGB -- (((s → a) → b) → t) in grate = unlock function
 mySecretFilterApplication = \f → RGB (f red) (f green) (f blue)
 
+-- Calculation of new RGB value is completely hidden.
 grateOneServer ∷ RGB → RGB
 grateOneServer = grate mySecretFilterApplication oneServer
 
 -- When thinking about password protecting something or, more generally, hiding the application of an algorithm, closed profunctors and grates are your friend!
+
+--------------------
+-- Make me a Star --
+--------------------
+
+-- Star turns a Functor into a Profunctor.
+
+-- There are lots of nice profunctors, and we'd like to work with them somehow.
+-- One such profunctor is the KLEISLI PROFUNCTOR.
+-- It is a profunctor with a side effect mixed in.
+-- So if you take the Function profunctor we've seen before a → b,
+-- a KLEISLI PROFUNCTOR is that with a little something extra like write to a log, read from an environment or launch a rocket.
+-- The signature for a KLEISLI PROFUNCTOR, also called a Star, is:
+newtype Star ∷ ∀ k. (k → Type) → Type → k → Type
+newtype Star f a b = Star (a → f b)
+
+-- Here, f represents the side effect and b represents the output value.
+-- This could be something like Log Int or Array String or RocketLauncher Number.
+
+instance Functor f ⇒ Functor (Star f a) where
+  map f (Star g) = Star (map f <<< g)
+
+-- with type annotaions
+-- instance Functor f ⇒ Functor (Star f a) where
+--   map ∷ ∀ c d. (c → d) → Star f a c → Star f a d
+--   map (f ∷ c → d) (Star (g ∷ a → f c)) = Star (map f <<< g) ∷ Star f a d
+
+instance Functor f ⇒ Profunctor (Star f) where
+  dimap ∷ ∀ a b c d. (a → b) → (c → d) → Star f b c → Star f a d
+  dimap ein aus (Star f) = Star (map aus <<< f <<< ein)
+
+class (Strong p, Choice p) <= Wander p where
+  wander
+    ∷ ∀ s t a b
+    . (∀ f. Applicative f ⇒ (a → f b) → s → f t)
+    → p a b
+    → p s t
+
+-- Applicative f = Identity
+instance Wander Function where
+  wander ∷ ∀ s t a b. (∀ f. Applicative f ⇒ (a → f b) → s → f t) → (a → b) → (s → t)
+  wander kleisli ourfunc input = unwrap ((kleisli (Identity <<< ourfunc)) input)
+
+type Client = { name ∷ String, balance ∷ Number }
+
+actOnBalance ∷ ∀ f. Applicative f ⇒ (Number → f Number) → Client → f Client
+actOnBalance f client = { name: client.name, balance: _ } <$> f client.balance
+
+-- balanceClient is a lens
+balanceClient = wander actOnBalance
+
+-- traversal is a lens
+traversal = wander traverse
+
+traverseList = traversal <<< lens (\s → Tuple (readFloat s) show)
 
 main ∷ Effect Unit
 main = do
@@ -354,3 +437,6 @@ main = do
   log $ show $ prism sensibleDefault show oneServer "not a number" ------- "1.0" 
   log $ show $ lockedOneServer "3.1416" ---------------------------------- "4.1416"
   log $ show $ grateOneServer (RGB 1.0 2.0 3.0) -------------------------- (RGB 2.0 3.0 4.0)
+  log $ show $ balanceClient oneServer { name: "Mike", balance: 0.0 } ---- { balance: 1.0, name: "Mike" }
+  log $ show $ traversal oneServer [ 1.0, 2.0, 3.0 ] --------------------- [2.0, 3.0, 4.0]
+  log $ show $ traverseList oneServer [ "1.0", "2.0", "3.0" ] ------------ ["2.0", "3.0", "4.0"]
