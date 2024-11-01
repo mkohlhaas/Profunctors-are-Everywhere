@@ -177,8 +177,8 @@ lens inputWithMap server =
 -- lens  ∷ ∀ p a b s t. Strong p ⇒ (s → Tuple a    (b → t)) → (a → b) → (s → t)
 
 -- Lens is a strong profunctor. (Strong means that it uses a Tuple.)
-type Lens s t a b = ∀ p. Strong p => p a b -> p s t -- (a → b) → (s → t)
-type Lens' s a = Lens s s a a ------------------------ (a → a) → (s → s)
+type Lens s t a b = ∀ p. Strong p => p a b → p s t -- (a → b) → (s → t)
+type Lens' s a = Lens s s a a ----------------------- (a → a) → (s → s)
 
 -- In general, when you "zoom out" from a lens, you want to get back to where you started, so Lens' is enough for most practical cases.
 
@@ -190,10 +190,10 @@ lens' inputWithMap server =
     (\(Tuple b backHomeFn) → backHomeFn b)
     (first server)
 
-mapBackToString :: String -> Tuple Number (Number -> String)
+mapBackToString ∷ String → Tuple Number (Number → String)
 mapBackToString s = Tuple (readFloat s) show
 
-mapBackToUTF8 :: String -> Tuple String (String -> String)
+mapBackToUTF8 ∷ String → Tuple String (String → String)
 mapBackToUTF8 s = Tuple (fromUTF8 s) toUTF8
 
 lens1 ∷ Lens' String Number
@@ -208,15 +208,15 @@ lensCompound ∷ Lens' String Number
 lensCompound = lens1 >>> lens2
 
 -----------------------
--- Give us a choice! --
+-- Give Us a Choice! --
 -----------------------
 
--- You go either the Left or Right path.
+-- You go either the Left or Right path using Either (a sum type).
 
--- similar to Strong which used a Tuple
+-- similar to Strong which used a Tuple (a product type)
 class Profunctor p ⇐ Choice p where
   left ∷ ∀ a b c. p a b → p (Either a c) (Either b c)
-  right ∷ ∀ a b c. p b c → p (Either a b) (Either a c)
+  right ∷ ∀ a b c. p a b → p (Either c a) (Either c b)
 
 -- applied to profunctor Function (→)
 -- class Profunctor p ⇐ Choice p where
@@ -228,11 +228,13 @@ instance Choice (→) where
   left _ (Right c) = Right c
   right = (<$>)
 
--- how i'll use The Plus One Server: use the oneServer
-myUseOneServer = dimap (\s -> Left (readFloat s)) (either show identity) (left oneServer)
+-- how I'll use the oneServer
+-- put the oneServer in the left path and use the left path
+myUseOneServer = dimap (\s → Left (readFloat s)) (either show identity) (left oneServer)
 
--- how my colleague will use my server: ignores the oneServer
-colleagueUseOneServer = dimap (\_ -> Right "One-Server ignored") (either show identity) (left oneServer)
+-- how my colleague will use the oneServer
+-- put the oneServer in the left path and use the right path
+colleagueUseOneServer = dimap (\_ → Right "One-Server ignored") (either show identity) (left oneServer)
 
 -- Another choice we can make is whether to attempt the computation at all.
 -- If our server can process the information, great, and if not, we provide a sensible default.
@@ -244,7 +246,7 @@ prism ∷ ∀ p s t a b. Choice p ⇒ (s → Either t a) → (b → t) → p a b
 prism to from server = dimap to (either identity from) (right server)
 
 ------------------------------
--- But what about Security? --
+-- But What About Security? --
 ------------------------------
 
 -- "The Plus One Server" is so hot that hackers have noticed it and are trying to reverse engineer it to understand its inner workings and exploit its vulnerabilities.
@@ -252,8 +254,8 @@ prism to from server = dimap to (either identity from) (right server)
 
 -- We would love to have something like that but so far it doesn't work:
 -- secureOneServer = dimap
---   (\s password -> readFloat s) ----------- we want to secure our number (= 4.1416) with a password
---   (\locked -> show (locked "passw0rd")) -- locked is a function that takes a password and results in the original number (= 4.1416)
+--   (\s password → readFloat s) ----------- we want to secure our number (= 4.1416) with a password
+--   (\locked → show (locked "passw0rd")) -- locked is a function that takes a password and results in the original number (= 4.1416)
 --   oneServer
 --   "3.1416"
 
@@ -265,6 +267,14 @@ class Profunctor p ⇐ Closed p where
 -- class Profunctor p ⇐ Closed (→) where
 --   closed ∷ ∀ a b x. (a → b) → (x → a) → (x → b)
 
+--                             2
+--                      ---------------
+--                      |             |
+--   closed ∷ ∀ a b x. (a → b) → (x → a) → x → b
+--                                |        |
+--                                ---------- 
+--                                    1
+
 -- A way to think about lock is that it delays/defers application of our function until the point when a password is provided.
 -- Another way to imagine it is that it sends the function to the end-user and lets them apply it with their password.
 -- I would guess that this is the exact algorithm WhatsApp uses for their end-to-end encryption.
@@ -274,21 +284,27 @@ instance Closed (→) where
 
 lock = closed
 
+-- `closed` allows to provide oneServer with an additional argument! (In our case it's a password.)
 -- type variable `x` in class Closed would be the password to access our oneServer.
--- Actually, we don't check the password, the idea is the same.
-lockedOneServer = dimap
-  (\s -> \_password → readFloat s)
-  (\locked -> locked "not-so-secret-password") -- (locked "not-so-secret-password") reveals `b` (4.1416)
-  (lock oneServer)
+-- Actually, in our sample code we don't check the password, the idea is the same.
+-- dimap ∷ ∀ p a b c d. Profunctor p ⇒ (a → b) → (c → d) → p b c → p a d
 
--- In functional-programming land, passwords can be anything. Strings, Ints, and functions!
+lockedOneServer ∷ String → Number
+lockedOneServer =
+  dimap
+    (\s → \_password → readFloat s) --------------  String (= "3.1416") → (Password → Number (= 3.1416))
+    (\locked → locked "not-so-secret-password") -- (Password → Number (= 4.1416)) → Number (= 4.1416)
+    (lock oneServer) ----------------------------- (Password → Number (= 3.1416)) → (Password → Number (= 4.1416))
 
--- Password-protection with a function is called a Grate.
+-- In functional-programming land, passwords can be anything. Strings, Ints, ... and FUNCTIONS!
+
+-- Password-protection with a function is called a GRATE.
 -- Here, (s → a) will be our "function" password.
 -- Replace x with (s → a) in closed:
 -- closed ∷ ∀ a b x s. (a → b) → ((s → a) → a) → ((s → a) → b)
 -- grate ∷ ∀ s t a b p. Closed p ⇒ (((s → a) → b) → t) → (a → b) → (s → t)
-grate ∷ ∀ s t a b p. Closed p ⇒ (((s → a) → b) → t) → p a b → p s t
+-- grate ∷ ∀ s t a b p. Closed p ⇒ (((s → a) → b) → t) → p a b → p s t
+-- grate unlock server = dimap (\s → \(f ∷ (s → a)) → (f s ∷ a)) (unlock ∷ (((s → a) → b) → t)) (lock server ∷ ((s → a) → b))
 grate unlock server = dimap (\s → \f → f s) unlock (lock server)
 
 data RGB = RGB Number Number Number
