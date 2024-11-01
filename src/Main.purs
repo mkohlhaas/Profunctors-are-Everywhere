@@ -11,11 +11,14 @@ import Data.Number (fromString, isNaN)
 import Data.Show.Generic (genericShow)
 import Data.String.CodeUnits (fromCharArray, toCharArray)
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst, snd)
 import Effect (Effect)
 import Effect.Console (log)
 
--- What's a profunctor?
+-- =======================
+-- What's a profunctor? ==
+-- =======================
+
 --   - It has input and output.
 --   - You can bolt on something to the "output" end to modify the output.
 --   - You can bolt on something to the "input" end to convert input.
@@ -89,9 +92,9 @@ bossMadeMe2 = dimap fromUTF8 identity modified
 -- One way is that it returns a profunctor `p s t`. (It creates a profunctor from a profunctor.)
 -- But another way - and one that is closer to that of map - is that it returns a function between profunctors `p a b` → `p s t`.
 
-----------------------------------
--- First Profunctor Optic - Iso --
-----------------------------------
+-- ===================================
+-- Our First Profunctor Optic - Iso ==
+-- ===================================
 
 -- When s == t and a == b, another way to look at `dimap (s → a) (a → s)` is that it has the potential to create an isomorphism between s and a,
 -- e.g. converting a map to a list of tuples and back again.
@@ -109,9 +112,9 @@ iso' s2a b2t = dimap s2a b2t -- Meaning that if you give me (s → a) → (b →
 
 -- In general, a profunctor optic is a function with the signature `p a b → p s t`.
 
----------------------------
--- A Stronger Profunctor --
----------------------------
+-- ========================
+-- A Stronger Profunctor ==
+-- ========================
 
 -- Now, imagine that "The Plus One Server" is getting used more and, as is natural with servers, we want to hook it up to other services.
 -- While other "more sophisticated" services have some sort of logging, our mighty ((+) 1.0) lacks logging capabilities.
@@ -210,9 +213,9 @@ lens2 = lens mapBackToUTF8
 lensCompound ∷ Lens' String Number
 lensCompound = lens1 >>> lens2
 
------------------------
--- Give Us a Choice! --
------------------------
+-- ====================
+-- Give Us a Choice! ==
+-- ====================
 
 -- You go either the Left or Right path using Either (a sum type).
 
@@ -248,9 +251,9 @@ sensibleDefault s = if isNaN (readFloat s) then (Left s) else Right (readFloat s
 prism ∷ ∀ p s t a b. Choice p ⇒ (s → Either t a) → (b → t) → p a b → p s t
 prism to from server = dimap to (either identity from) (right server)
 
-------------------------------
--- But What About Security? --
-------------------------------
+-- ===========================
+-- But What About Security? ==
+-- ===========================
 
 -- "The Plus One Server" is so hot that hackers have noticed it and are trying to reverse engineer it to understand its inner workings and exploit its vulnerabilities.
 -- The boss, dismayed, starts saying stuff like "we need to lock this thing down" and "does anyone here know about end-to-end encryption?"
@@ -359,9 +362,9 @@ grateOneServer = grate mySecretFilterApplication oneServer
 
 -- When thinking about password protecting something or, more generally, hiding the application of an algorithm, closed profunctors and grates are your friend!
 
---------------------
--- Make me a Star --
---------------------
+-- =================
+-- Make me a Star ==
+-- =================
 
 -- Star turns a Functor into a Profunctor.
 
@@ -414,6 +417,64 @@ traversal = wander traverse
 
 traverseList = traversal <<< lens (\s → Tuple (readFloat s) show)
 
+-- ====================
+-- Folding up values --
+-- ====================
+
+-- Unfortunately this paragraph is too chaotic. Therefore only small part of it
+-- implemented.
+
+-- So far, our workhorse profunctor has been the function, and even when we
+-- wandered into Kleisli-land, we did so to import our results back to the world
+-- of functions. Remembering that optics are functions between profunctors, when
+-- we give a Function to an optic as an argument, we call that a Setter. This is
+-- how "The Plus One Server" worked - it is a function (profunctor) that we
+-- passed to an OPTIC (= FUNCTION ACTING ON PROFUNCTORS) and it set something on
+-- the inside of a larger structure (ie an array of integers in a traversal or a
+-- RGB channel in a grate).
+
+-- While this metaphor is helpful, it is admittedly like a bad monad tutorial ,
+-- in that it specializes the idea of profunctors too narrowly. PROFUNCTORS ARE
+-- A GENERALIZED WAY TO REASON ABOUT I/O, and there's more to I/O than just
+-- functions.
+
+-- One thing that comes up a lot with I/O is intentionally suppressing the
+-- output. For example, you can ignore the output value and instead return
+-- something else. In Purescript, this is called `Forget`.
+
+-- forget `b` (covariant output transformation: `b → r`)
+newtype Forget ∷ ∀ k. Type → Type → k → Type
+newtype Forget r a b = Forget (a → r)
+
+derive instance Functor (Forget r a)
+
+instance Profunctor (Forget r) where
+  dimap f _ (Forget z) = Forget (z <<< f)
+
+instance Strong (Forget r) where
+  first (Forget z) = Forget (z <<< fst)
+  second (Forget z) = Forget (z <<< snd)
+
+-- ordinary Function profunctor
+dontForget = dimap (const true) (const 42) identity
+
+-- "forgets" to apply output transformation (= const 42)
+-- dimap :: (a → b) → (c → d) → Forget (b → r) → Forget (a → r)
+-- dimap :: (a → b) →    _    → Forget (b → r) → Forget (a → r)
+forget ∷ ∀ a. Forget Boolean a Int
+forget = dimap (const true) (const 42) (Forget identity)
+
+runForget (Forget f) = f
+
+lens'' i = dimap i (\(Tuple b f) → f b) <<< first
+
+-- forgetLens = lens'' (\a -> Tuple (readFloat a) show) (Forget identity) "3.1416" -- Forget 3.1416
+
+-- ff = runForget $ lens'' forgetLens
+
+-- view profunctor = runForget (profunctor (Forget identity))
+-- view $ lens (\a -> Tuple (readFloat a) show) (Forget identity) "3.1416" -- 3.1416
+
 main ∷ Effect Unit
 main = do
   log $ show $ tst1 5.0 -------------------------------------------------- 15.0 (3 * 5.0)
@@ -440,3 +501,5 @@ main = do
   log $ show $ balanceClient oneServer { name: "Mike", balance: 0.0 } ---- { balance: 1.0, name: "Mike" }
   log $ show $ traversal oneServer [ 1.0, 2.0, 3.0 ] --------------------- [2.0, 3.0, 4.0]
   log $ show $ traverseList oneServer [ "1.0", "2.0", "3.0" ] ------------ ["2.0", "3.0", "4.0"]
+  log $ show $ dontForget "3.1416" --------------------------------------- 42
+  log $ show $ runForget forget "3.1416" --------------------------------- true
