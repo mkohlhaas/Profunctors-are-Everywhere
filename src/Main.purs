@@ -15,7 +15,10 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 
--- What's a profunctor?
+-- =======================
+-- What's a profunctor? ==
+-- =======================
+
 --   - It has input and output.
 --   - You can bolt on something to the "output" end to modify the output.
 --   - You can bolt on something to the "input" end to convert input.
@@ -89,9 +92,9 @@ bossMadeMe2 = dimap fromUTF8 identity modified
 -- One way is that it returns a profunctor `p s t`. (It creates a profunctor from a profunctor.)
 -- But another way - and one that is closer to that of map - is that it returns a function between profunctors `p a b` → `p s t`.
 
-----------------------------------
--- First Profunctor Optic - Iso --
-----------------------------------
+-- ===================================
+-- Our First Profunctor Optic - Iso ==
+-- ===================================
 
 -- When s == t and a == b, another way to look at `dimap (s → a) (a → s)` is that it has the potential to create an isomorphism between s and a,
 -- e.g. converting a map to a list of tuples and back again.
@@ -109,9 +112,9 @@ iso' s2a b2t = dimap s2a b2t -- Meaning that if you give me (s → a) → (b →
 
 -- In general, a profunctor optic is a function with the signature `p a b → p s t`.
 
----------------------------
--- A Stronger Profunctor --
----------------------------
+-- ========================
+-- A Stronger Profunctor ==
+-- ========================
 
 -- Now, imagine that "The Plus One Server" is getting used more and, as is natural with servers, we want to hook it up to other services.
 -- While other "more sophisticated" services have some sort of logging, our mighty ((+) 1.0) lacks logging capabilities.
@@ -210,9 +213,9 @@ lens2 = lens mapBackToUTF8
 lensCompound ∷ Lens' String Number
 lensCompound = lens1 >>> lens2
 
------------------------
--- Give Us a Choice! --
------------------------
+-- ====================
+-- Give Us a Choice! ==
+-- ====================
 
 -- You go either the Left or Right path using Either (a sum type).
 
@@ -248,9 +251,9 @@ sensibleDefault s = if isNaN (readFloat s) then (Left s) else Right (readFloat s
 prism ∷ ∀ p s t a b. Choice p ⇒ (s → Either t a) → (b → t) → p a b → p s t
 prism to from server = dimap to (either identity from) (right server)
 
-------------------------------
--- But What About Security? --
-------------------------------
+-- ===========================
+-- But What About Security? ==
+-- ===========================
 
 -- "The Plus One Server" is so hot that hackers have noticed it and are trying to reverse engineer it to understand its inner workings and exploit its vulnerabilities.
 -- The boss, dismayed, starts saying stuff like "we need to lock this thing down" and "does anyone here know about end-to-end encryption?"
@@ -359,9 +362,9 @@ grateOneServer = grate mySecretFilterApplication oneServer
 
 -- When thinking about password protecting something or, more generally, hiding the application of an algorithm, closed profunctors and grates are your friend!
 
---------------------
--- Make me a Star --
---------------------
+-- =================
+-- Make me a Star ==
+-- =================
 
 -- Star turns a Functor into a Profunctor.
 
@@ -413,6 +416,10 @@ balanceClient = wander actOnBalance
 traversal = wander traverse
 
 traverseList = traversal <<< lens (\s → Tuple (readFloat s) show)
+
+-- ====================
+-- Folding up values --
+-- ====================
 
 main ∷ Effect Unit
 main = do
