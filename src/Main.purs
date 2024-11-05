@@ -128,7 +128,7 @@ iso' s2a b2t = dimap s2a b2t -- Meaning that if you give me (s → a) → (b →
 
 -- Adjustment. Making our Plus One Server stronger.
 -- `p` is a Strong Profunctor.
-class Profunctor p <= Strong p where
+class Profunctor p ⇐ Strong p where
   first ∷ ∀ a b c. p a b → p (Tuple a c) (Tuple b c)
   second ∷ ∀ a b c. p a b → p (Tuple c a) (Tuple c b)
 
@@ -319,7 +319,7 @@ grate unlock server =
     (lock server) -----  ((s → a) → a) → ((s → a) → b)
 
 -- checking types
-grate' ∷ ∀ s t a b. (((s → a) → b) → t) → (a -> b) → (s -> t)
+grate' ∷ ∀ s t a b. (((s → a) → b) → t) → (a → b) → (s → t)
 grate' unlock server =
   dimap
     ((\s → \f → f s) ∷ s → ((s → a) → a))
@@ -330,7 +330,7 @@ grate' unlock server =
 -- t       = RGB
 -- a       = Number
 -- b       = Number
-grate'' ∷ ∀ rgb t a b. (((rgb → a) → b) → t) → (a -> b) → (rgb -> t)
+grate'' ∷ ∀ rgb t a b. (((rgb → a) → b) → t) → (a → b) → (rgb → t)
 grate'' unlock server =
   dimap
     ((\rgb → \f → f rgb) ∷ rgb → ((rgb → a) → a)) ------ rgb is hidden inside the function password
@@ -392,7 +392,7 @@ instance Functor f ⇒ Profunctor (Star f) where
   dimap ∷ ∀ a b c d. (a → b) → (c → d) → Star f b c → Star f a d
   dimap ein aus (Star f) = Star (map aus <<< f <<< ein)
 
-class (Strong p, Choice p) <= Wander p where
+class (Strong p, Choice p) ⇐ Wander p where
   wander
     ∷ ∀ s t a b
     . (∀ f. Applicative f ⇒ (a → f b) → s → f t)
